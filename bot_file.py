@@ -325,11 +325,18 @@ c_main.execute('''CREATE TABLE IF NOT EXISTS subscription_requests (
     plan_days INTEGER,
     payment_method TEXT,
     proof_file_id TEXT,
+    transaction_number TEXT,
     status TEXT DEFAULT 'pending',
     created_at TEXT,
     admin_msg_id INTEGER,
     admin_chat_id INTEGER
 )''')
+
+# ضمان وجود عمود رقم العملية في القواعد الموجودة مسبقاً (للترقية الآمنة)
+try:
+    c_main.execute("ALTER TABLE subscription_requests ADD COLUMN transaction_number TEXT")
+except Exception:
+    pass
 
 c_main.execute('''CREATE TABLE IF NOT EXISTS payment_methods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1414,7 +1421,7 @@ def get_active_payment_methods():
 
 def get_pending_subscription_requests():
     return c_main.execute(
-        "SELECT id, user_id, username, name, plan, plan_price, payment_method, proof_file_id, created_at FROM subscription_requests WHERE status='pending'"
+        "SELECT id, user_id, username, name, plan, plan_price, payment_method, proof_file_id, transaction_number, created_at FROM subscription_requests WHERE status='pending'"
     ).fetchall()
 
 async def check_channel_membership(bot, user_id: int) -> bool:
@@ -2439,10 +2446,10 @@ async def sub_receive_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "شهرية" in plan_name:
         plan_days = 30
 
-    # 1. حفظ الطلب تلقائياً في قاعدة البيانات بنظامك الأصلي مع الأيام الصحيحة
+    # 1. حفظ الطلب تلقائياً في قاعدة البيانات بنظامك الأصلي مع الأيام الصحيحة ورقم العملية
     c_main.execute(
-        "INSERT INTO subscription_requests (user_id, username, name, plan, plan_price, plan_days, payment_method, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (uid, uname, name, plan_name, plan_price, plan_days, method_name, "pending")
+        "INSERT INTO subscription_requests (user_id, username, name, plan, plan_price, plan_days, payment_method, transaction_number, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (uid, uname, name, plan_name, plan_price, plan_days, method_name, tx_num, "pending")
     )
     conn_main.commit()
     req_id = c_main.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -2451,9 +2458,7 @@ async def sub_receive_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ تم استلام رقم العملية بنجاح! جاري التحقق من قبل الإدارة وتفعيل باقتك فوراً. ⏳")
     context.user_data["awaiting_proof"] = False
 
-    # 3. إرسال الإشعار الفوري لك مع أزرار القبول والرفض الشغالة
-    ADMIN_ID = 1214736439
-    
+    # 3. إرسال الإشعار الفوري لكل المديرين مع أزرار القبول والرفض الشغالة
     admin_message = (
         f"🚨 <b>طلب دفع جديد واشتراك زبون!</b>\n\n"
         f"👤 <b>المستخدِم:</b> <a href='tg://user?id={uid}'>{name}</a> (@{uname})\n"
@@ -2471,15 +2476,16 @@ async def sub_receive_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID, 
-            text=admin_message, 
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(admin_kb)
-        )
-    except Exception as e:
-        print(f"خطأ في إرسال الإشعار للإدارة: {e}")
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id, 
+                text=admin_message, 
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(admin_kb)
+            )
+        except Exception as e:
+            print(f"خطأ في إرسال الإشعار للإدارة ({admin_id}): {e}")
 
 async def sub_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """موافقة الأدمن على طلب الاشتراك"""
@@ -2557,8 +2563,8 @@ async def sub_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn_main.commit()
 
     try:
-        await query.edit_message_caption(
-            caption=query.message.caption + f"\n\n❌ *تم الرفض بواسطة:* @{query.from_user.username or query.from_user.id}",
+        await query.edit_message_text(
+            text=query.message.text + f"\n\n❌ *تم الرفض بواسطة:* @{query.from_user.username or query.from_user.id}",
             parse_mode="Markdown"
         )
     except Exception:
@@ -2732,9 +2738,9 @@ async def admin_sub_requests(update: Update, context: ContextTypes.DEFAULT_TYPE)
     txt = "📋 *طلبات الاشتراك المعلقة:*\n\n"
     kb = []
     for req in reqs[:10]:
-        rid, uid, uname, name, plan, price, method, _, created = req
+        rid, uid, uname, name, plan, price, method, _, tx_num, created = req
         plan_info = SUBSCRIPTION_PLANS.get(plan, {})
-        txt += f"#{rid} | {name} (@{uname or '—'}) | {plan_info.get('name', plan)} ─ {price} | {method}\n"
+        txt += f"#{rid} | {name} (@{uname or '—'}) | {plan_info.get('name', plan)} ─ {price} | {method} | 🔢 رقم العملية: {tx_num or 'غير متوفر'}\n"
         kb.append([
             InlineKeyboardButton(f"✅ قبول #{rid}", callback_data=f"sub_approve_{rid}"),
             InlineKeyboardButton(f"❌ رفض #{rid}", callback_data=f"sub_reject_{rid}"),
