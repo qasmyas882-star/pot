@@ -134,8 +134,36 @@ def sync_proxy(user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pa
          ["user_id"])
 
 
+def sync_proxy_sync(user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date):
+    """يكتب البروكسي إلى Supabase بشكل متزامن (فوري) — ينتظر حتى يكتمل الكتاب
+    أو يفشل بدلاً من العمل في الخلفية. يُرجع True عند النجاح."""
+    if not _enabled:
+        return True
+    try:
+        _upsert("proxies",
+                ["user_id", "proxy_type", "proxy_host", "proxy_port", "proxy_user", "proxy_pass", "created_date"],
+                [user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date],
+                ["user_id"])
+        return True
+    except Exception as e:
+        logger.warning(f"[Supabase Sync] فشل حفظ البروكسي بشكل متزامن: {e}")
+        return False
+
+
 def sync_proxy_delete(user_id):
     _run(_delete, "proxies", ["user_id"], [user_id])
+
+
+def sync_proxy_delete_sync(user_id):
+    """يحذف البروكسي من Supabase بشكل متزامن (فوري). يُرجع True عند النجاح."""
+    if not _enabled:
+        return True
+    try:
+        _delete("proxies", ["user_id"], [user_id])
+        return True
+    except Exception as e:
+        logger.warning(f"[Supabase Sync] فشل حذف البروكسي بشكل متزامن: {e}")
+        return False
 
 
 def fetch_proxy(user_id):

@@ -1503,12 +1503,12 @@ def save_proxy(user_id: int, proxy_type: str, proxy_host: str, proxy_port: int, 
     c_main.execute("INSERT OR REPLACE INTO proxies (user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                    (user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date))
     conn_main.commit()
-    supabase_sync.sync_proxy(user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date)
+    supabase_sync.sync_proxy_sync(user_id, proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass, created_date)
 
 def delete_proxy(user_id: int):
     c_main.execute("DELETE FROM proxies WHERE user_id = ?", (user_id,))
     conn_main.commit()
-    supabase_sync.sync_proxy_delete(user_id)
+    supabase_sync.sync_proxy_delete_sync(user_id)
 
 def get_proxy_info(user_id: int):
     row = supabase_sync.fetch_proxy(user_id)
@@ -3105,6 +3105,14 @@ async def fav_sched_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """جدولة عمليات من المفضلة — يهيّئ سياق الجدولة باللعبة المختارة ويكمل بقية الخطوات."""
     query = update.callback_query
     await query.answer()
+    if not get_proxy_info(query.from_user.id):
+        await query.edit_message_text(
+            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً من قسم «🔧 إعدادات البروكسي» قبل استخدام الجدولة.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔧 إعدادات البروكسي", callback_data="proxy_settings")],
+                                                [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]),
+            parse_mode="Markdown"
+        )
+        return -1
     try:
         _, plat, gid_str = query.data.split("_", 2)
         gid = int(gid_str)
@@ -7145,6 +7153,14 @@ def stop_sched_task(group_id: int):
 async def sched_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if not get_proxy_info(query.from_user.id):
+        await query.edit_message_text(
+            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً من قسم «🔧 إعدادات البروكسي» قبل استخدام الجدولة.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔧 إعدادات البروكسي", callback_data="proxy_settings")],
+                                                [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]),
+            parse_mode="Markdown"
+        )
+        return "SCHED_MAIN"
     kb = [
         [InlineKeyboardButton("➕ مجموعة جديدة", callback_data="sched_new")],
         [InlineKeyboardButton("📋 مجموعاتي", callback_data="sched_my_groups")],
