@@ -3819,20 +3819,16 @@ async def admin_proxy_detail(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ptype, phost, pport, puser, ppass, created, last_used, usage = row
         active = phost is not None and str(phost).strip() != ""
         status = "نشط 🟢" if active else "غير نشط 🔴"
-        # إخفاء كلمة المرور جزئياً للأمان
-        masked_pass = ""
-        if ppass:
-            masked_pass = ppass[:2] + "••••••" if len(ppass) > 2 else "••••••"
         txt = (f"🌐 *تفاصيل البروكسي*\n\n"
                f"👤 *الحساب:* `{uid}`\n"
                f"📛 *الاسم:* {disp}\n"
                f"🔗 *المعرّف:* {handle}\n\n"
                f"📋 *الحالة:* {status}\n"
-               f"🔀 *النوع:* {ptype or '-'}\n"
+               f"🔀 *النوع:* `{ptype or '-'}`\n"
                f"🖥️ *المضيف:* `{phost or '-'}`\n"
-               f"🔌 *المنفذ:* {pport if pport is not None else '-'}\n"
-               f"👤 *المستخدم:* {puser or '-'}\n"
-               f"🔑 *كلمة المرور:* {masked_pass or '-'}\n"
+               f"🔌 *المنفذ:* `{pport if pport is not None else '-'}`\n"
+               f"👤 *اليوزر:* `{puser or '-'}`\n"
+               f"🔑 *الباسوورد:* `{ppass or '-'}`\n"
                f"📅 *تاريخ الإضافة:* {created[:16] if created else '-'}\n"
                f"⏱️ *آخر استخدام:* {last_used[:16] if last_used else 'لم يُستخدم'}\n"
                f"📊 *عدد الاستخدامات:* {usage or 0}")
