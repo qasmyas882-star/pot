@@ -3105,11 +3105,13 @@ async def fav_sched_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """جدولة عمليات من المفضلة — يهيّئ سياق الجدولة باللعبة المختارة ويكمل بقية الخطوات."""
     query = update.callback_query
     await query.answer()
-    if not get_proxy_info(query.from_user.id):
+    # منع جدولة عمليات من المفضلة بدون بروكسي نشط
+    if not get_proxy_for_user(query.from_user.id):
+        kb = [[InlineKeyboardButton("🌐 إضافة بروكسي", callback_data="proxy_settings")],
+              [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]
         await query.edit_message_text(
-            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً من قسم «🔧 إعدادات البروكسي» قبل استخدام الجدولة.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔧 إعدادات البروكسي", callback_data="proxy_settings")],
-                                                [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]),
+            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً",
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown"
         )
         return -1
@@ -7153,14 +7155,16 @@ def stop_sched_task(group_id: int):
 async def sched_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if not get_proxy_info(query.from_user.id):
+    # منع فتح الجدولة بدون بروكسي نشط
+    if not get_proxy_for_user(query.from_user.id):
+        kb = [[InlineKeyboardButton("🌐 إضافة بروكسي", callback_data="proxy_settings")],
+              [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]
         await query.edit_message_text(
-            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً من قسم «🔧 إعدادات البروكسي» قبل استخدام الجدولة.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔧 إعدادات البروكسي", callback_data="proxy_settings")],
-                                                [InlineKeyboardButton("🔙 رجوع", callback_data="main")]]),
+            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً",
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown"
         )
-        return "SCHED_MAIN"
+        return -1
     kb = [
         [InlineKeyboardButton("➕ مجموعة جديدة", callback_data="sched_new")],
         [InlineKeyboardButton("📋 مجموعاتي", callback_data="sched_my_groups")],
@@ -7176,6 +7180,16 @@ async def sched_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sched_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    # منع بدء مجموعة جدولة جديدة بدون بروكسي نشط
+    if not get_proxy_for_user(query.from_user.id):
+        kb = [[InlineKeyboardButton("🌐 إضافة بروكسي", callback_data="proxy_settings")],
+              [InlineKeyboardButton("🔙 رجوع", callback_data="sched_menu")]]
+        await query.edit_message_text(
+            "❌ *ليس لديك بروكسي نشط*\n\nيرجى إضافة بروكسي أولاً",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+        return -1
     context.user_data["sched"] = {}
     kb = [
         [InlineKeyboardButton("📊 Adjust", callback_data="sched_platform_adj")],
