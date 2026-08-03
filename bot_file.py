@@ -3738,9 +3738,107 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📢 بث", callback_data="admin_broadcast")],
         [InlineKeyboardButton("📊 إحصائيات", callback_data="admin_stats")],
         [InlineKeyboardButton("💳 طرق الدفع والاشتراكات", callback_data="admin_payment_methods")],
+        [InlineKeyboardButton("🌐 بروكسيات", callback_data="admin_proxies")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="main")]
     ]
     await query.edit_message_text("👑 *لوحة تحكم المدير*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    return -1
+
+async def admin_proxies(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يعرض كل الحسابات الموجودة على البوت مع حالة البروكسي (نشط / غير نشط) لكل حساب."""
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("❌ غير مصرح", parse_mode="Markdown")
+        return -1
+    # جلب كل المستخدمين مع ربط جدول البروكسيات عبر LEFT JOIN لإظهار الحالة لكل حساب
+    rows = c_main.execute(
+        """SELECT u.user_id, u.username, u.name,
+                  p.proxy_type, p.proxy_host, p.proxy_port
+           FROM users AS u
+           LEFT JOIN proxies AS p ON p.user_id = u.user_id
+           ORDER BY (p.proxy_host IS NOT NULL) DESC, u.user_id ASC"""
+    ).fetchall()
+    if not rows:
+        kb = [[InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")]]
+        await query.edit_message_text("🌐 *لا يوجد مستخدمين على البوت بعد*",
+                                      parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        return -1
+    txt = "🌐 *حالة البروكسيات لكل الحسابات*\n\n"
+    kb = []
+    for uid, uname, uname_disp, ptype, phost, pport in rows:
+        active = phost is not None and str(phost).strip() != ""
+        status = "نشط 🟢" if active else "غير نشط 🔴"
+        disp = uname_disp or "-"
+        handle = f"@{uname}" if uname else "-"
+        txt += f"• `{uid}` | {handle} | {disp}\n  ┗ 🌐 {status}\n"
+        kb.append([InlineKeyboardButton(f"{disp} — {status}", callback_data=f"admin_proxy_{uid}")])
+        if len(txt) > 3800:
+            txt += "\n... (تم عرض أول مجموعة من الحسابات)"
+            break
+    kb.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")])
+    await query.edit_message_text(txt[:4096], parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    return -1
+
+async def admin_proxy_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يعرض كل تفاصيل البروكسي الخاص بحساب محدد."""
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("❌ غير مصرح", parse_mode="Markdown")
+        return -1
+    try:
+        uid = int(query.data.replace("admin_proxy_", ""))
+    except (ValueError, AttributeError):
+        await query.edit_message_text("❌ *معرف غير صالح*", parse_mode="Markdown")
+        return -1
+    # بيانات الحساب
+    user_row = c_main.execute(
+        "SELECT username, name FROM users WHERE user_id = ?", (uid,)
+    ).fetchone()
+    if not user_row:
+        await query.edit_message_text("❌ *المستخدم غير موجود*", parse_mode="Markdown")
+        return -1
+    uname, uname_disp = user_row
+    # كل تفاصيل البروكسي
+    row = c_main.execute(
+        """SELECT proxy_type, proxy_host, proxy_port, proxy_user, proxy_pass,
+                  created_date, last_used, usage_count
+           FROM proxies WHERE user_id = ?""",
+        (uid,)
+    ).fetchone()
+    disp = uname_disp or "-"
+    handle = f"@{uname}" if uname else "-"
+    if not row:
+        txt = (f"🌐 *تفاصيل البروكسي*\n\n"
+               f"👤 *الحساب:* `{uid}`\n"
+               f"📛 *الاسم:* {disp}\n"
+               f"🔗 *المعرّف:* {handle}\n\n"
+               f"🔴 *لا يوجد بروكسي نشط لهذا الحساب*")
+    else:
+        ptype, phost, pport, puser, ppass, created, last_used, usage = row
+        active = phost is not None and str(phost).strip() != ""
+        status = "نشط 🟢" if active else "غير نشط 🔴"
+        # إخفاء كلمة المرور جزئياً للأمان
+        masked_pass = ""
+        if ppass:
+            masked_pass = ppass[:2] + "••••••" if len(ppass) > 2 else "••••••"
+        txt = (f"🌐 *تفاصيل البروكسي*\n\n"
+               f"👤 *الحساب:* `{uid}`\n"
+               f"📛 *الاسم:* {disp}\n"
+               f"🔗 *المعرّف:* {handle}\n\n"
+               f"📋 *الحالة:* {status}\n"
+               f"🔀 *النوع:* {ptype or '-'}\n"
+               f"🖥️ *المضيف:* `{phost or '-'}`\n"
+               f"🔌 *المنفذ:* {pport if pport is not None else '-'}\n"
+               f"👤 *المستخدم:* {puser or '-'}\n"
+               f"🔑 *كلمة المرور:* {masked_pass or '-'}\n"
+               f"📅 *تاريخ الإضافة:* {created[:16] if created else '-'}\n"
+               f"⏱️ *آخر استخدام:* {last_used[:16] if last_used else 'لم يُستخدم'}\n"
+               f"📊 *عدد الاستخدامات:* {usage or 0}")
+    kb = [[InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="admin_proxies")],
+          [InlineKeyboardButton("👑 لوحة التحكم", callback_data="admin_panel")]]
+    await query.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
     return -1
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -8243,6 +8341,10 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_pm_set_inst, pattern="^admin_pm_set_inst_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_pm_toggle, pattern="^admin_pm_toggle_\\d+$"))
     app.add_handler(CallbackQueryHandler(admin_sub_requests, pattern="^admin_sub_requests$"))
+
+    # ⭐ معالجات زر "بروكسيات" (لوحة الأدمن): عرض كل الحسابات وحالة البروكسي
+    app.add_handler(CallbackQueryHandler(admin_proxies, pattern="^admin_proxies$"))
+    app.add_handler(CallbackQueryHandler(admin_proxy_detail, pattern="^admin_proxy_\\d+$"))
 
     # ⭐ معالج استقبال صور إثبات الدفع
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, sub_receive_proof))
