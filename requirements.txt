@@ -1,0 +1,5 @@
+python-telegram-bot==20.7
+requests==2.31.0
+PySocks==1.7.1
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
